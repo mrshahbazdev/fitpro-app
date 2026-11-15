@@ -38,6 +38,8 @@
       <div class="stat-card"><b id="statStreak">0</b><span>Day streak</span></div>
     </div>
 
+    <div class="hero-card coach-card" id="coachCard"></div>
+
     <h3 class="section-title">Quick start</h3>
     <div id="homeExerciseList" class="exercise-list"></div>
   </section>
@@ -132,8 +134,41 @@
       <div class="stat-card"><b id="progMinutes">0</b><span>Minutes</span></div>
       <div class="stat-card"><b id="progKcal">0</b><span>Calories</span></div>
     </div>
+    <h3 class="section-title">📓 Daily Diary</h3>
+    <div id="diaryList" class="history-list"></div>
     <h3 class="section-title">History</h3>
     <div id="historyList" class="history-list"></div>
+  </section>
+
+  <!-- ============ AI COACH ============ -->
+  <section id="screen-coach" class="screen">
+    <header class="topbar">
+      <div>
+        <p class="hello">Smart Training</p>
+        <h1>AI Coach 🤖</h1>
+      </div>
+    </header>
+    <div id="coachContent"></div>
+  </section>
+
+  <!-- ============ FORM CHECK ============ -->
+  <section id="screen-formcheck" class="screen">
+    <header class="topbar">
+      <button class="back-btn" id="fcBackBtn">‹ Back</button>
+      <h1 id="fcTitle">Form Check</h1>
+    </header>
+    <div class="fc-stage">
+      <video id="fcVideo" autoplay muted playsinline></video>
+      <canvas id="fcCanvas"></canvas>
+    </div>
+    <div class="fc-stats">
+      <div class="stat-card"><b id="fcReps">0</b><span>Reps counted</span></div>
+    </div>
+    <p class="fc-feedback" id="fcFeedback">Press Start, allow the camera, and show your full body sideways to the camera.</p>
+    <button class="btn-primary" id="fcStartBtn" style="width:100%">📷 Start Camera</button>
+    <button class="btn-primary" id="fcStopBtn" style="width:100%;display:none">⏹ Stop</button>
+    <button class="btn-ghost" id="fcSaveBtn" style="width:100%;display:none;margin-top:10px">📓 Save to Diary</button>
+    <p class="stream-note">Form check uses your camera on this phone only — no video is uploaded anywhere. The pose model downloads once (needs internet the first time).</p>
   </section>
 
   <!-- ============ BOTTOM NAV ============ -->
@@ -141,6 +176,7 @@
     <button class="nav-btn active" data-screen="home"><span class="nav-ico">🏠</span><span>Home</span></button>
     <button class="nav-btn" data-screen="exercises"><span class="nav-ico">💪</span><span>Exercises</span></button>
     <button class="nav-btn" data-screen="workout"><span class="nav-ico">▶️</span><span>Workout</span></button>
+    <button class="nav-btn" data-screen="coach"><span class="nav-ico">🤖</span><span>Coach</span></button>
     <button class="nav-btn" data-screen="progress"><span class="nav-ico">📈</span><span>Progress</span></button>
   </nav>
 

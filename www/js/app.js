@@ -3044,8 +3044,238 @@ const saveWorkout = (minutes, kcal, name) => {
   store.set('fitpro_history_v1', h.slice(0, 50));
 };
 
+/* ---------- Daily Diary ---------- */
+/* One entry per exercise per workout: { d (ISO date), id, sets, reps (total across sets), unit, kcal, w (workout name) }.
+   Newest first. The diary is the record of WHAT the user did each day. */
+const getDiary = () => store.get('fitpro_diary_v1', []);
+const saveDiaryEntries = (entries) => {
+  if (!entries.length) return;
+  const d = getDiary();
+  store.set('fitpro_diary_v1', entries.concat(d).slice(0, 1000));
+};
+function saveDiaryFromLog(wObj, workoutName) {
+  const entries = Object.values(wObj.log || {}).map(e => ({
+    d: new Date().toISOString(), id: e.id, sets: e.sets, reps: e.reps, unit: e.unit, kcal: e.kcal, w: workoutName || 'Workout'
+  }));
+  saveDiaryEntries(entries);
+}
+function diaryByDay() {
+  const days = {};
+  getDiary().forEach(en => {
+    const dt = new Date(en.d);
+    const key = dt.toDateString();
+    (days[key] = days[key] || { key, date: dt, entries: [], kcal: 0 }).entries.push(en);
+    days[key].kcal += en.kcal || 0;
+  });
+  return Object.values(days).sort((a, b) => b.date - a.date);
+}
+function dayLabel(dt) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const yest = new Date(today); yest.setDate(yest.getDate() - 1);
+  const d = new Date(dt); d.setHours(0, 0, 0, 0);
+  if (d.getTime() === today.getTime()) return 'Today';
+  if (d.getTime() === yest.getTime()) return 'Yesterday';
+  return dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+function diaryForExercise(id) { return getDiary().filter(en => en.id === id); }
+function bestForExercise(id) {
+  const list = diaryForExercise(id);
+  if (!list.length) return null;
+  let best = null;
+  list.forEach(en => { const score = en.sets * en.reps; if (!best || score > best.sets * best.reps) best = en; });
+  return best;
+}
+
+/* ---------- AI Coach ---------- */
+/* On-device smart coach: builds a weekly plan from the exercise library and
+   auto-progresses difficulty (progressive overload) from the user's diary.
+   No server, no account — everything is computed on the phone. */
+const COACH_GOALS = {
+  'Build Muscle': { sets: 4, reps: 10, hold: 30 },
+  'Lose Fat': { sets: 3, reps: 15, hold: 20 },
+  'Get Strong': { sets: 5, reps: 6, hold: 45 },
+  'Stay Active': { sets: 3, reps: 12, hold: 30 }
+};
+const COACH_SPLITS = {
+  3: [['Full Body'], ['Chest', 'Back', 'Arms', 'Shoulders'], ['Legs', 'Core', 'Glutes']],
+  4: [['Chest', 'Arms'], ['Back', 'Shoulders'], ['Legs', 'Core', 'Glutes'], ['Full Body']],
+  5: [['Chest'], ['Back'], ['Legs'], ['Arms', 'Shoulders'], ['Core', 'Glutes']],
+  6: [['Chest'], ['Back'], ['Legs'], ['Arms'], ['Shoulders', 'Core'], ['Full Body']]
+};
+const COACH_TRAIN_DAYS = { 3: [0, 2, 4], 4: [0, 1, 3, 5], 5: [0, 1, 2, 3, 4], 6: [0, 1, 2, 3, 4, 5] };
+const LEVEL_RANK = { Beginner: 0, Intermediate: 1, Advanced: 2 };
+const getCoachPrefs = () => store.get('fitpro_coach_v1', null);
+const setCoachPrefs = (p) => store.set('fitpro_coach_v1', p);
+const getCoachProg = () => store.get('fitpro_coach_prog_v1', {});
+const getCoachPlan = () => store.get('fitpro_coach_plan_v1', null);
+const setCoachPlan = (p) => store.set('fitpro_coach_plan_v1', p);
+function mulberry32(a) { return function () { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function weekKey(d) { const dt = new Date(d); dt.setHours(0, 0, 0, 0); const day = (dt.getDay() + 6) % 7; dt.setDate(dt.getDate() - day); return dt.toISOString().slice(0, 10); }
+function coachTarget(ex, prefs, prog) {
+  const g = COACH_GOALS[prefs.goal] || COACH_GOALS['Stay Active'];
+  const last = prog[ex.id];
+  let sets = g.sets, reps = ex.unit === 'seconds' ? g.hold : g.reps;
+  if (last) {
+    if (ex.unit === 'seconds') { reps = Math.min((last.reps || g.hold) + 5, 90); sets = last.sets || g.sets; }
+    else if ((last.reps || 0) >= 20) { reps = 12; sets = Math.min((last.sets || g.sets) + 1, 5); }
+    else { reps = Math.min((last.reps || g.reps) + 1, 20); sets = last.sets || g.sets; }
+  }
+  return { sets, reps };
+}
+function generateCoachPlan(prefs, exercises, prog, refDate) {
+  const split = COACH_SPLITS[prefs.days] || COACH_SPLITS[3];
+  const trainDays = COACH_TRAIN_DAYS[prefs.days] || COACH_TRAIN_DAYS[3];
+  const seed = [...weekKey(refDate || new Date())].reduce((n, c) => n + c.charCodeAt(0), 0);
+  const rand = mulberry32(seed);
+  const perDay = Math.max(4, Math.min(8, Math.round((prefs.minutes || 30) / 4)));
+  const used = new Set();
+  const days = [];
+  for (let d = 0; d < 7; d++) {
+    const ti = trainDays.indexOf(d);
+    if (ti === -1) { days.push({ day: d, train: false, focus: [], items: [] }); continue; }
+    const focus = split[ti % split.length];
+    const allowEq = (e) => prefs.equipment.includes('All') || prefs.equipment.includes(e.equipment) || e.equipment === 'Bodyweight';
+    let pool = exercises.filter(e => focus.includes(e.muscle) && LEVEL_RANK[e.level] <= LEVEL_RANK[prefs.level] && allowEq(e));
+    if (pool.length < perDay) pool = exercises.filter(e => focus.includes(e.muscle) && allowEq(e));
+    if (pool.length < perDay) pool = exercises.filter(e => focus.includes(e.muscle));
+    const fresh = pool.filter(e => !used.has(e.id));
+    const pickFrom = fresh.length >= perDay ? fresh : pool;
+    const shuffled = pickFrom.slice();
+    for (let i = shuffled.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); const tmp = shuffled[i]; shuffled[i] = shuffled[j]; shuffled[j] = tmp; }
+    const items = shuffled.slice(0, perDay).map(e => { used.add(e.id); const t = coachTarget(e, prefs, prog); return { id: e.id, sets: t.sets, reps: t.reps }; });
+    days.push({ day: d, train: true, focus, items });
+  }
+  return { week: weekKey(refDate || new Date()), prefs: { goal: prefs.goal, level: prefs.level, days: prefs.days, minutes: prefs.minutes, equipment: prefs.equipment }, days };
+}
+function updateCoachProgress(wObj) {
+  const prog = getCoachProg();
+  let changed = false;
+  Object.values(wObj.log || {}).forEach(e => {
+    prog[e.id] = { reps: Math.round(e.reps / Math.max(1, e.sets)), sets: e.sets, last: new Date().toISOString() };
+    changed = true;
+  });
+  if (changed) store.set('fitpro_coach_prog_v1', prog);
+}
+function todaysCoachDay() {
+  const plan = getCoachPlan();
+  if (!plan || plan.week !== weekKey(new Date())) return null;
+  const idx = (new Date().getDay() + 6) % 7;
+  return plan.days[idx] || null;
+}
+function ensureCoachPlan() {
+  const prefs = getCoachPrefs();
+  if (!prefs) return null;
+  let plan = getCoachPlan();
+  const want = { goal: prefs.goal, level: prefs.level, days: prefs.days, minutes: prefs.minutes, equipment: prefs.equipment };
+  if (!plan || plan.week !== weekKey(new Date()) || JSON.stringify(plan.prefs) !== JSON.stringify(want)) {
+    plan = generateCoachPlan(prefs, EXERCISES, getCoachProg(), new Date());
+    setCoachPlan(plan);
+  }
+  return plan;
+}
+function startCoachWorkout() {
+  const day = todaysCoachDay() || (ensureCoachPlan() && todaysCoachDay());
+  if (!day || !day.train || !day.items.length) { alert('Today is a rest day — enjoy the recovery! 💪'); return; }
+  const overrides = {};
+  day.items.forEach(it => { overrides[it.id] = { sets: it.sets, reps: it.reps }; });
+  startWorkout(day.items.map(it => it.id), 'Coach — ' + day.focus.join(' + '), overrides);
+}
+const WEEKDAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+function renderCoachCard() {
+  const el = document.getElementById('coachCard');
+  if (!el) return;
+  const prefs = getCoachPrefs();
+  if (!prefs) {
+    el.innerHTML = `<p class="hero-tag">🤖 AI COACH</p><h2>Your Personal Coach</h2><p class="hero-sub">Tell the coach your goal, level and time — it builds your weekly plan and makes it harder as you improve.</p><button class="btn-primary" id="coachSetupBtn">Set Up My Coach</button>`;
+    document.getElementById('coachSetupBtn').addEventListener('click', () => { renderCoach(); showScreen('coach'); });
+    return;
+  }
+  const plan = ensureCoachPlan();
+  const idx = (new Date().getDay() + 6) % 7;
+  const day = plan ? plan.days[idx] : null;
+  if (!day || !day.train) {
+    let next = null;
+    for (let k = 1; k <= 7; k++) { const d = plan.days[(idx + k) % 7]; if (d.train) { next = d; break; } }
+    el.innerHTML = `<p class="hero-tag">🤖 AI COACH • ${prefs.goal}</p><h2>Rest Day 😌</h2><p class="hero-sub">Today is recovery.${next ? ` Next session: ${WEEKDAY_NAMES[next.day]} — ${next.focus.join(' + ')}.` : ''}</p><button class="btn-ghost" id="coachViewBtn" style="width:100%">View My Week</button>`;
+  } else {
+    el.innerHTML = `<p class="hero-tag">🤖 AI COACH • ${prefs.goal}</p><h2>Today: ${day.focus.join(' + ')}</h2><p class="hero-sub">${day.items.length} exercises • ~${day.items.length * 4} min • ${prefs.level}</p><button class="btn-primary" id="coachStartBtn">▶ Start Today's Plan</button>`;
+  }
+  const vb = document.getElementById('coachViewBtn');
+  if (vb) vb.addEventListener('click', () => { renderCoach(); showScreen('coach'); });
+  const sb = document.getElementById('coachStartBtn');
+  if (sb) sb.addEventListener('click', startCoachWorkout);
+}
+function renderCoach() {
+  const el = document.getElementById('coachContent');
+  if (!el) return;
+  const saved = getCoachPrefs() || { goal: 'Build Muscle', level: 'Beginner', days: 3, minutes: 30, equipment: ['All'] };
+  const draft = { goal: saved.goal, level: saved.level, days: saved.days, minutes: saved.minutes, equipment: saved.equipment.slice() };
+  const chipGroup = (title, values, current, key, multi) => {
+    const btns = values.map(v => `<button class="chip ${multi ? (current.includes(v) ? 'active' : '') : (current === v ? 'active' : '')}" data-v="${v}">${v}</button>`).join('');
+    return `<p class="filter-label">${title}</p><div class="filter-row" data-key="${key}" data-multi="${multi ? 1 : 0}">${btns}</div>`;
+  };
+  const equipValues = ['All'].concat(EQUIPMENTS);
+  el.innerHTML = `
+    <p class="hero-sub">Your coach builds a new plan every week from the full library — and makes it harder as you get stronger. Everything runs on your phone, no account needed.</p>
+    ${chipGroup('GOAL', Object.keys(COACH_GOALS), draft.goal, 'goal', false)}
+    ${chipGroup('YOUR LEVEL', LEVELS, draft.level, 'level', false)}
+    ${chipGroup('DAYS PER WEEK', [3, 4, 5, 6], draft.days, 'days', false)}
+    ${chipGroup('MINUTES PER DAY', [20, 30, 45, 60], draft.minutes, 'minutes', false)}
+    ${chipGroup('EQUIPMENT YOU HAVE', equipValues, draft.equipment, 'equipment', true)}
+    <button class="btn-primary" id="coachBuildBtn" style="width:100%;margin:14px 0">✨ Build My Weekly Plan</button>
+    <div id="coachWeek"></div>`;
+  el.querySelectorAll('.filter-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      const btn = e.target.closest('.chip');
+      if (!btn) return;
+      const key = row.dataset.key;
+      const multi = row.dataset.multi === '1';
+      let v = btn.dataset.v;
+      if (key === 'days' || key === 'minutes') v = parseInt(v, 10);
+      if (multi) {
+        if (v === 'All') { draft.equipment = ['All']; }
+        else {
+          draft.equipment = draft.equipment.filter(x => x !== 'All');
+          const i = draft.equipment.indexOf(v);
+          if (i === -1) draft.equipment.push(v); else draft.equipment.splice(i, 1);
+          if (!draft.equipment.length) draft.equipment = ['All'];
+        }
+        row.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', draft.equipment.includes(c.dataset.v)));
+      } else {
+        draft[key] = v;
+        row.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.v === String(v)));
+      }
+    });
+  });
+  const renderWeek = () => {
+    const plan = getCoachPlan();
+    const box = document.getElementById('coachWeek');
+    if (!box) return;
+    if (!plan) { box.innerHTML = ''; return; }
+    const todayIdx = (new Date().getDay() + 6) % 7;
+    box.innerHTML = '<h3 class="section-title">This Week\'s Plan</h3>' + plan.days.map(d => {
+      if (!d.train) return `<div class="coach-day"><b>${WEEKDAY_NAMES[d.day]}</b><span>😌 Rest day</span></div>`;
+      const items = d.items.map(it => {
+        const ex = EXERCISES.find(e => e.id === it.id);
+        return ex ? `${ex.name} — ${it.sets}×${it.reps}` : it.id;
+      }).join('<br>');
+      return `<div class="coach-day ${d.day === todayIdx ? 'today' : ''}"><b>${WEEKDAY_NAMES[d.day]} — ${d.focus.join(' + ')}</b><div class="coach-items">${items}</div>${d.day === todayIdx ? '<button class="btn-primary" id="coachWeekStartBtn" style="width:100%;margin-top:8px">▶ Start Today</button>' : ''}</div>`;
+    }).join('');
+    const sb = document.getElementById('coachWeekStartBtn');
+    if (sb) sb.addEventListener('click', startCoachWorkout);
+  };
+  document.getElementById('coachBuildBtn').addEventListener('click', () => {
+    setCoachPrefs({ goal: draft.goal, level: draft.level, days: draft.days, minutes: draft.minutes, equipment: draft.equipment });
+    const plan = generateCoachPlan(getCoachPrefs(), EXERCISES, getCoachProg(), new Date());
+    setCoachPlan(plan);
+    renderCoachCard();
+    renderWeek();
+  });
+  renderWeek();
+}
+
 /* ---------- Navigation ---------- */
-const screens = ['home', 'exercises', 'detail', 'workout', 'done', 'progress'];
+const screens = ['home', 'exercises', 'detail', 'workout', 'done', 'progress', 'coach', 'formcheck'];
 let currentScreen = 'home';
 function pauseAllVideos() { document.querySelectorAll('video').forEach(v => { try { v.pause(); } catch (e) {} }); }
 function playVisibleVideo() {
@@ -3059,13 +3289,14 @@ function showScreen(name) {
   screens.forEach(s => document.getElementById('screen-' + s).classList.toggle('active', s === name));
   document.querySelectorAll('.nav-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.screen === name || (name === 'detail' && b.dataset.screen === 'exercises') || (name === 'done' && b.dataset.screen === 'workout')));
-  document.getElementById('bottomNav').style.display = (name === 'workout' || name === 'done') ? 'none' : 'flex';
+  document.getElementById('bottomNav').style.display = (name === 'workout' || name === 'done' || name === 'formcheck') ? 'none' : 'flex';
   window.scrollTo(0, 0);
   setTimeout(playVisibleVideo, 50);
 }
 document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', () => {
   if (b.dataset.screen === 'workout') { startWorkout(WORKOUT_PLAN); return; }
   if (b.dataset.screen === 'progress') renderProgress();
+  if (b.dataset.screen === 'coach') renderCoach();
   showScreen(b.dataset.screen);
 }));
 
@@ -3146,6 +3377,14 @@ chipRow('levelRow', LEVELS, 'level');
 document.getElementById('searchInput').addEventListener('input', (e) => { filters.q = e.target.value; renderLists(); });
 
 /* ---------- Detail ---------- */
+function diaryHistoryBlock(ex) {
+  const hist = diaryForExercise(ex.id);
+  if (!hist.length) return '';
+  const best = bestForExercise(ex.id);
+  const perSet = (en) => Math.round(en.reps / Math.max(1, en.sets)) + ' ' + (en.unit === 'seconds' ? 'sec' : 'reps');
+  const last = hist[0];
+  return `<div class="detail-block"><h3>📓 Your history</h3><p>Last done: ${dayLabel(new Date(last.d))} — ${last.sets} × ${perSet(last)}${best ? `<br>Best: ${best.sets} × ${perSet(best)} (${dayLabel(new Date(best.d))})` : ''}<br>Done ${hist.length} time${hist.length === 1 ? '' : 's'}.</p></div>`;
+}
 function openDetail(id) {
   const ex = EXERCISES.find(e => e.id === id);
   document.getElementById('detailTitle').textContent = ex.name;
@@ -3163,9 +3402,13 @@ function openDetail(id) {
     <div class="detail-block"><h3>How to do it</h3><ol>${ex.steps.map(s => `<li>${s}</li>`).join('')}</ol></div>
     <div class="detail-block"><h3>✅ Pro tip</h3><p class="tip">${ex.tip}</p></div>
     <div class="detail-block"><h3>⚠️ Common mistake</h3><p class="warn">${ex.mistake}</p></div>
+    ${diaryHistoryBlock(ex)}
+    ${formCheckTypeFor(ex) ? '<button class="btn-ghost" id="detailFormBtn" style="width:100%;margin-top:10px">📷 Check My Form</button>' : ''}
     <button class="btn-primary" id="detailStartBtn">▶ Start this exercise</button>`;
   if (window.hydrateGifImgs) hydrateGifImgs();
   document.getElementById('detailStartBtn').addEventListener('click', () => startWorkout([ex.id], ex.name));
+  const fb = document.getElementById('detailFormBtn');
+  if (fb) fb.addEventListener('click', () => openFormCheck(ex.id));
   showScreen('detail');
 }
 document.getElementById('detailBack').addEventListener('click', () => showScreen('exercises'));
@@ -3174,22 +3417,37 @@ document.getElementById('detailBack').addEventListener('click', () => showScreen
 const REST_SECONDS = 30;
 let w = null; // { ids:[exId...], exIdx, set, mode, reps, secondsLeft, timer, startedAt, totalSteps, doneSteps, name }
 
-function totalStepsFor(ids) { return ids.reduce((n, id) => n + (EXERCISES.find(e => e.id === id) || { sets: 0 }).sets, 0); }
+function totalStepsFor(ids, overrides) { return ids.reduce((n, id) => { const e = EXERCISES.find(x => x.id === id) || { sets: 0 }; return n + ((overrides && overrides[id] && overrides[id].sets) || e.sets); }, 0); }
 function fmt(s) { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
 function clearTimer() { if (w && w.timer) { clearInterval(w.timer); w.timer = null; } }
 
-function startWorkout(ids, name) {
+function startWorkout(ids, name, planOverrides) {
   clearTimer();
   const list = (ids && ids.length ? ids : WORKOUT_PLAN).slice();
-  w = { ids: list, exIdx: 0, set: 1, mode: 'work', reps: 0, secondsLeft: 0, timer: null, startedAt: Date.now(), totalSteps: totalStepsFor(list), doneSteps: 0, name: name || 'Full Body Blast' };
+  w = { ids: list, exIdx: 0, set: 1, mode: 'work', reps: 0, secondsLeft: 0, timer: null, startedAt: Date.now(), totalSteps: totalStepsFor(list, planOverrides), doneSteps: 0, name: name || 'Full Body Blast', plan: planOverrides || null, log: {} };
   showScreen('workout');
   renderWorkoutStep();
 }
 function currentEx() { return EXERCISES.find(e => e.id === w.ids[w.exIdx]); }
+/* Coach plan overrides (per-exercise sets/reps) applied on top of the base exercise. */
+function planEx(ex) {
+  if (!ex) return ex;
+  if (w && w.plan && w.plan[ex.id]) return Object.assign({}, ex, w.plan[ex.id]);
+  return ex;
+}
+/* Record one finished set into the session log (feeds the Daily Diary + Coach progression). */
+function logSet() {
+  const ex = planEx(currentEx());
+  if (!ex) return;
+  const reps = ex.unit === 'seconds' ? ex.reps : (w.reps > 0 ? w.reps : ex.reps);
+  const e = w.log[ex.id] || (w.log[ex.id] = { id: ex.id, sets: 0, reps: 0, unit: ex.unit, kcal: ex.kcal || 0 });
+  e.sets += 1;
+  e.reps += reps;
+}
 
 function renderWorkoutStep() {
   clearTimer();
-  const ex = currentEx();
+  const ex = planEx(currentEx());
   document.getElementById('workoutStepLabel').textContent = `Exercise ${w.exIdx + 1} of ${w.ids.length} — Set ${w.set}/${ex.sets}`;
   document.getElementById('workoutProgress').style.width = Math.round((w.doneSteps / w.totalSteps) * 100) + '%';
   const dots = Array.from({ length: ex.sets }, (_, i) =>
@@ -3241,8 +3499,9 @@ function renderWorkoutStep() {
 }
 
 function completeSet() {
+  logSet();
   w.doneSteps++;
-  const ex = currentEx();
+  const ex = planEx(currentEx());
   if (w.set < ex.sets) { w.set++; startRest(); return; }
   if (w.exIdx < w.ids.length - 1) { w.exIdx++; w.set = 1; startRest(true); return; }
   finishWorkout();
@@ -3250,7 +3509,7 @@ function completeSet() {
 
 function startRest(nextExercise = false) {
   clearTimer();
-  const ex = currentEx();
+  const ex = planEx(currentEx());
   document.getElementById('workoutStepLabel').textContent = nextExercise ? `Next: ${ex.name}` : 'Rest';
   document.getElementById('workoutProgress').style.width = Math.round((w.doneSteps / w.totalSteps) * 100) + '%';
   let left = REST_SECONDS;
@@ -3278,6 +3537,8 @@ function finishWorkout() {
   const kcal = w.ids.reduce((n, id) => n + (EXERCISES.find(e => e.id === id) || { kcal: 0 }).kcal, 0);
   const name = w.name;
   saveWorkout(minutes, kcal, name);
+  saveDiaryFromLog(w, name);
+  updateCoachProgress(w);
   document.getElementById('doneExercises').textContent = w.ids.length;
   document.getElementById('doneTime').textContent = fmt((Date.now() - w.startedAt) / 1000);
   document.getElementById('doneKcal').textContent = kcal;
@@ -3287,10 +3548,155 @@ function finishWorkout() {
 }
 
 document.getElementById('workoutQuit').addEventListener('click', () => {
-  clearTimer(); w = null; showScreen('home');
+  clearTimer();
+  if (w && w.log && Object.keys(w.log).length) saveDiaryFromLog(w, (w.name || 'Workout') + ' (partial)');
+  w = null; showScreen('home');
 });
 document.getElementById('doneHomeBtn').addEventListener('click', () => showScreen('home'));
 document.getElementById('startWorkoutBtn').addEventListener('click', () => startWorkout(WORKOUT_PLAN));
+
+/* ---------- Camera Form Check ---------- */
+/* Live pose tracking (MediaPipe Pose, loaded on demand from CDN) that counts
+   reps and coaches form for push-ups and squats. First use needs internet
+   (the pose model downloads once); without it the screen explains why.
+   No video ever leaves the phone. */
+const FORMCHECK = {
+  pushup: { label: 'Push-Up', joints: [11, 13, 15], downBelow: 120, upAbove: 160, shallowAbove: 100 },
+  squat: { label: 'Squat', joints: [23, 25, 27], downBelow: 130, upAbove: 160, shallowAbove: 110 }
+};
+function formCheckTypeFor(ex) {
+  const n = (ex.name || '').toLowerCase();
+  if (n.includes('push')) return 'pushup';
+  if (n.includes('squat')) return 'squat';
+  return null;
+}
+let fc = null; // { ex, type, stream, pose, raf, reps, state, minAngle, running, startedAt }
+function angleBetween(a, b, c) {
+  const v1 = { x: a.x - b.x, y: a.y - b.y };
+  const v2 = { x: c.x - b.x, y: c.y - b.y };
+  const dot = v1.x * v2.x + v1.y * v2.y;
+  const m1 = Math.hypot(v1.x, v1.y) || 1, m2 = Math.hypot(v2.x, v2.y) || 1;
+  const cos = Math.max(-1, Math.min(1, dot / (m1 * m2)));
+  return Math.acos(cos) * 180 / Math.PI;
+}
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector('script[src="' + src + '"]')) return resolve();
+    const s = document.createElement('script');
+    s.src = src; s.onload = resolve; s.onerror = () => reject(new Error('Failed to load the pose model — check your internet and try again.'));
+    document.head.appendChild(s);
+  });
+}
+function openFormCheck(exId) {
+  const ex = EXERCISES.find(e => e.id === exId);
+  if (!ex) return;
+  const type = formCheckTypeFor(ex);
+  fc = { ex, type, stream: null, pose: null, raf: 0, reps: 0, state: 'up', minAngle: 180, running: false, startedAt: 0 };
+  document.getElementById('fcTitle').textContent = 'Form Check — ' + ex.name;
+  document.getElementById('fcFeedback').textContent = type ? 'Press Start, allow the camera, and show your full body sideways to the camera.' : 'Form check is available for push-ups and squats for now — more exercises coming soon.';
+  document.getElementById('fcReps').textContent = '0';
+  document.getElementById('fcStartBtn').style.display = type ? '' : 'none';
+  document.getElementById('fcStopBtn').style.display = 'none';
+  document.getElementById('fcSaveBtn').style.display = 'none';
+  document.getElementById('fcStartBtn').onclick = () => startFormCheck();
+  document.getElementById('fcStopBtn').onclick = () => stopFormCheck(false);
+  document.getElementById('fcSaveBtn').onclick = () => saveFormCheckToDiary();
+  document.getElementById('fcBackBtn').onclick = () => { stopFormCheck(true); openDetail(ex.id); };
+  showScreen('formcheck');
+}
+async function startFormCheck() {
+  const fb = document.getElementById('fcFeedback');
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Camera is not available in this browser.');
+    fb.textContent = 'Loading pose model… (first time needs internet)';
+    await loadScriptOnce('https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/pose.js');
+    if (!window.Pose) throw new Error('Pose model failed to load — check your internet and try again.');
+    fc.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+    const video = document.getElementById('fcVideo');
+    video.srcObject = fc.stream;
+    await video.play();
+    fc.pose = new window.Pose({ locateFile: (f) => 'https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/' + f });
+    fc.pose.setOptions({ modelComplexity: 0, smoothLandmarks: true, enableSegmentation: false, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+    fc.pose.onResults((res) => onFormCheckResults(res));
+    fc.running = true; fc.startedAt = Date.now();
+    document.getElementById('fcStartBtn').style.display = 'none';
+    document.getElementById('fcStopBtn').style.display = '';
+    fb.textContent = 'Move into frame — show your full body sideways to the camera.';
+    const loop = async () => {
+      if (!fc || !fc.running) return;
+      try { await fc.pose.send({ image: video }); } catch (e) { /* ignore a dropped frame */ }
+      fc.raf = requestAnimationFrame(loop);
+    };
+    loop();
+  } catch (err) {
+    fb.textContent = '⚠️ ' + (err && err.message ? err.message : 'Could not start the camera.') + ' Allow camera permission and try again.';
+    stopFormCheckTracks();
+  }
+}
+function setFcFeedback(t) { const el = document.getElementById('fcFeedback'); if (el && el.textContent !== t) el.textContent = t; }
+function drawSkeleton(ctx, lm, W, H) {
+  const P = [[11, 12], [11, 13], [13, 15], [12, 14], [14, 16], [11, 23], [12, 24], [23, 24], [23, 25], [25, 27], [24, 26], [26, 28], [27, 31], [28, 32]];
+  ctx.strokeStyle = '#D4FF3F'; ctx.fillStyle = '#D4FF3F'; ctx.lineWidth = 3;
+  P.forEach((pr) => {
+    const a = lm[pr[0]], b = lm[pr[1]];
+    if (!a || !b) return;
+    ctx.beginPath(); ctx.moveTo(a.x * W, a.y * H); ctx.lineTo(b.x * W, b.y * H); ctx.stroke();
+  });
+  lm.forEach((p) => { if ((p.visibility || 0) < 0.5) return; ctx.beginPath(); ctx.arc(p.x * W, p.y * H, 3, 0, 7); ctx.fill(); });
+}
+function onFormCheckResults(res) {
+  if (!fc || !fc.running) return;
+  const canvas = document.getElementById('fcCanvas');
+  const video = document.getElementById('fcVideo');
+  const ctx = canvas.getContext('2d');
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const lm = res.poseLandmarks;
+  if (!lm) { setFcFeedback('Move into frame — I can\'t see you yet.'); return; }
+  drawSkeleton(ctx, lm, canvas.width, canvas.height);
+  const cfg = FORMCHECK[fc.type];
+  const pa = lm[cfg.joints[0]], pb = lm[cfg.joints[1]], pc = lm[cfg.joints[2]];
+  if (!pa || !pb || !pc || (pa.visibility || 0) < 0.5 || (pb.visibility || 0) < 0.5 || (pc.visibility || 0) < 0.5) {
+    setFcFeedback('Move into frame — keep your full body visible, sideways to the camera.');
+    return;
+  }
+  const ang = angleBetween(pa, pb, pc);
+  if (ang < fc.minAngle) fc.minAngle = ang;
+  if (fc.state === 'up' && ang < cfg.downBelow) { fc.state = 'down'; setFcFeedback('⬇️ Going down — good!'); }
+  else if (fc.state === 'down' && ang > cfg.upAbove) {
+    fc.state = 'up';
+    fc.reps++;
+    document.getElementById('fcReps').textContent = String(fc.reps);
+    if (fc.minAngle > cfg.shallowAbove) setFcFeedback('✅ Rep ' + fc.reps + ' — try going a little lower next time.');
+    else setFcFeedback('✅ Rep ' + fc.reps + ' — great form!');
+    fc.minAngle = 180;
+  }
+}
+function stopFormCheckTracks() {
+  if (fc && fc.stream) { fc.stream.getTracks().forEach((t) => t.stop()); fc.stream = null; }
+  if (fc) { fc.running = false; cancelAnimationFrame(fc.raf); }
+  const video = document.getElementById('fcVideo');
+  if (video) video.srcObject = null;
+}
+function stopFormCheck(silent) {
+  stopFormCheckTracks();
+  if (fc && fc.pose) { try { fc.pose.close(); } catch (e) {} fc.pose = null; }
+  document.getElementById('fcStopBtn').style.display = 'none';
+  document.getElementById('fcStartBtn').style.display = '';
+  if (fc && fc.reps > 0) {
+    document.getElementById('fcSaveBtn').style.display = '';
+    setFcFeedback('Done — ' + fc.reps + ' rep' + (fc.reps === 1 ? '' : 's') + ' counted in ' + Math.max(1, Math.round((Date.now() - fc.startedAt) / 1000)) + 's. Save it to your diary?');
+  } else if (!silent) {
+    setFcFeedback('Stopped. Press Start to try again.');
+  }
+}
+function saveFormCheckToDiary() {
+  if (!fc || !fc.reps) return;
+  saveDiaryEntries([{ d: new Date().toISOString(), id: fc.ex.id, sets: 1, reps: fc.reps, unit: 'reps', kcal: fc.ex.kcal || 0, w: 'Form Check' }]);
+  document.getElementById('fcSaveBtn').style.display = 'none';
+  setFcFeedback('Saved — ' + fc.reps + ' ' + fc.ex.name + ' reps added to today\'s diary. 📓');
+}
 
 /* ---------- Home stats & progress ---------- */
 function streakDays(history) {
@@ -3310,9 +3716,31 @@ function renderHomeStats() {
   document.getElementById('statStreak').textContent = streakDays(h);
   document.getElementById('heroExCount').textContent = WORKOUT_PLAN.length;
   document.getElementById('heroLibCount').textContent = EXERCISES.length;
+  renderCoachCard();
+}
+function renderDiary() {
+  const el = document.getElementById('diaryList');
+  if (!el) return;
+  const days = diaryByDay();
+  if (!days.length) {
+    el.innerHTML = '<p class="empty-note">No activity yet — finish a workout and every exercise you do will be logged here, day by day. 💪</p>';
+    return;
+  }
+  el.innerHTML = days.slice(0, 14).map(day => {
+    const rows = day.entries.map(en => {
+      const ex = EXERCISES.find(e => e.id === en.id);
+      const nm = ex ? ex.name : en.id;
+      const per = Math.round(en.reps / Math.max(1, en.sets));
+      const amt = en.unit === 'seconds' ? `${en.sets} × ${per} sec` : `${en.sets} × ${per} reps`;
+      return `<div class="diary-row"><div><b>${nm}</b><span>${amt}</span></div><div class="kcal">${en.kcal} kcal</div></div>`;
+    }).join('');
+    const n = day.entries.length;
+    return `<div class="diary-day"><div class="diary-day-head"><b>${dayLabel(day.date)}</b><span>${n} exercise${n === 1 ? '' : 's'} • ${day.kcal} kcal</span></div>${rows}</div>`;
+  }).join('');
 }
 function renderProgress() {
   const h = getHistory();
+  renderDiary();
   document.getElementById('progWorkouts').textContent = h.length;
   document.getElementById('progMinutes').textContent = h.reduce((n, x) => n + (x.minutes || 0), 0);
   document.getElementById('progKcal').textContent = h.reduce((n, x) => n + (x.kcal || 0), 0);

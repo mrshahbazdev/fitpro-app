@@ -238,3 +238,28 @@ body {
   display: flex; align-items: center; justify-content: center;
 }
 .tag.stream { background: #3A2A10; color: #FFB020; }
+
+/* ---- Daily Diary ---- */
+.diary-day { background: var(--card); border-radius: 16px; padding: 12px 14px; margin-bottom: 10px; }
+.diary-day-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.diary-day-head b { font-size: 15px; }
+.diary-day-head span { color: var(--muted); font-size: 12px; }
+.diary-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 2px; border-top: 1px solid rgba(255,255,255,.06); }
+.diary-row b { font-size: 14px; display: block; }
+.diary-row span { color: var(--muted); font-size: 12px; }
+.diary-row .kcal { color: var(--volt); font-weight: 800; font-size: 13px; }
+
+/* ---- AI Coach ---- */
+.coach-card { margin-bottom: 16px; }
+.coach-day { background: var(--card); border-radius: 16px; padding: 12px 14px; margin-bottom: 10px; }
+.coach-day.today { border: 2px solid var(--volt); }
+.coach-day b { font-size: 15px; display: block; }
+.coach-day span { color: var(--muted); font-size: 13px; }
+.coach-day .coach-items { margin-top: 6px; font-size: 13px; line-height: 1.7; }
+
+/* ---- Camera Form Check ---- */
+.fc-stage { position: relative; border-radius: 16px; overflow: hidden; background: #000; transform: scaleX(-1); }
+.fc-stage video { width: 100%; display: block; }
+.fc-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.fc-stats { display: flex; gap: 10px; margin: 12px 0; }
+.fc-feedback { font-size: 15px; font-weight: 700; text-align: center; margin: 14px 4px; min-height: 44px; }
