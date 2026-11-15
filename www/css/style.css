@@ -1,0 +1,240 @@
+/* FitPro — dark volt theme, mobile-first, offline-safe */
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+:root {
+  --bg: #0B0F14;
+  --card: #151C26;
+  --card2: #1C2531;
+  --text: #F2F5F7;
+  --muted: #8A97A5;
+  --volt: #C8F542;
+  --volt-dim: #9DC22E;
+  --orange: #FF7A45;
+  --radius: 20px;
+}
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.45;
+}
+#app { max-width: 480px; margin: 0 auto; min-height: 100vh; position: relative; padding-bottom: 96px; }
+.screen { display: none; padding: 20px 18px 8px; animation: fadeIn .25s ease; }
+.screen.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+.topbar { display: flex; justify-content: space-between; align-items: flex-start; margin: 8px 2px 18px; }
+.topbar h1 { font-size: 28px; font-weight: 800; letter-spacing: -.5px; }
+.hello { color: var(--muted); font-size: 13px; margin-bottom: 2px; }
+.avatar { font-size: 30px; background: var(--card); border-radius: 16px; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; }
+
+.hero-card {
+  background: linear-gradient(135deg, #1E2A1B 0%, #16211A 55%, #101A12 100%);
+  border: 1px solid #2A3A24;
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.hero-tag { color: var(--volt); font-size: 11px; font-weight: 700; letter-spacing: 2px; }
+.hero-card h2 { font-size: 26px; margin: 6px 0 4px; }
+.hero-sub { color: var(--muted); font-size: 14px; margin-bottom: 16px; }
+.hero-row { display: flex; gap: 12px; margin-bottom: 18px; }
+.hero-stat { background: rgba(255,255,255,.06); border-radius: 12px; padding: 10px 14px; flex: 1; }
+.hero-stat b { display: block; font-size: 19px; }
+.hero-stat span { color: var(--muted); font-size: 12px; }
+
+.btn-primary {
+  width: 100%; background: var(--volt); color: #10160A; border: none;
+  font-size: 17px; font-weight: 800; padding: 15px; border-radius: 14px; cursor: pointer;
+}
+.btn-primary:active { transform: scale(.98); }
+.btn-ghost {
+  width: 100%; background: transparent; color: var(--text); border: 1.5px solid #2C3947;
+  font-size: 16px; font-weight: 700; padding: 13px; border-radius: 14px; cursor: pointer; margin-top: 10px;
+}
+.btn-rest { background: var(--card2); color: var(--volt); border: 1.5px solid #33402A; }
+
+.stats-row { display: flex; gap: 12px; margin-bottom: 20px; }
+.stat-card { flex: 1; background: var(--card); border-radius: 16px; padding: 14px 10px; text-align: center; }
+.stat-card b { display: block; font-size: 22px; }
+.stat-card span { color: var(--muted); font-size: 12px; }
+
+.section-title { font-size: 18px; font-weight: 800; margin: 4px 2px 12px; }
+
+.exercise-list { display: flex; flex-direction: column; gap: 12px; }
+.ex-card {
+  display: flex; align-items: center; gap: 14px; background: var(--card);
+  border-radius: 18px; padding: 12px; cursor: pointer; border: 1px solid transparent;
+}
+.ex-card:active { border-color: var(--volt); }
+.ex-thumb { width: 76px; height: 76px; border-radius: 14px; background: var(--card2); flex-shrink: 0; overflow: hidden; }
+.ex-thumb svg { width: 100%; height: 100%; }
+.ex-info { flex: 1; min-width: 0; }
+.ex-info h3 { font-size: 17px; }
+.ex-info p { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.ex-meta { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+.tag { font-size: 11px; font-weight: 700; background: #22301C; color: var(--volt); padding: 3px 8px; border-radius: 20px; }
+.tag.grey { background: #232E3A; color: #B9C4CE; }
+.ex-arrow { color: var(--muted); font-size: 22px; padding-right: 4px; }
+
+.filter-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 14px; scrollbar-width: none; }
+.filter-row::-webkit-scrollbar { display: none; }
+.chip {
+  background: var(--card); color: var(--text); border: 1px solid #26313D;
+  padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.chip.active { background: var(--volt); color: #10160A; border-color: var(--volt); }
+
+.back-btn { background: var(--card); color: var(--text); border: none; font-size: 15px; font-weight: 700; padding: 9px 14px; border-radius: 12px; cursor: pointer; height: fit-content; }
+
+/* ---- Exercise detail ---- */
+.demo-stage {
+  background: linear-gradient(180deg, #18222E 0%, #121A23 100%);
+  border: 1px solid #24303C; border-radius: var(--radius);
+  height: 250px; display: flex; align-items: center; justify-content: center;
+  overflow: hidden; margin-bottom: 16px; position: relative;
+}
+.demo-stage svg { width: 240px; height: 240px; }
+.demo-label {
+  position: absolute; bottom: 10px; left: 0; right: 0; text-align: center;
+  color: var(--muted); font-size: 12px; letter-spacing: 1px; font-weight: 700;
+}
+.detail-meta { display: flex; gap: 10px; margin-bottom: 16px; }
+.detail-meta .stat-card { padding: 12px 6px; }
+.detail-block { background: var(--card); border-radius: var(--radius); padding: 18px; margin-bottom: 14px; }
+.detail-block h3 { font-size: 17px; margin-bottom: 10px; }
+.detail-block ol { padding-left: 20px; display: flex; flex-direction: column; gap: 8px; color: #D5DDE3; font-size: 15px; }
+.detail-block p { color: #D5DDE3; font-size: 15px; }
+.tip { color: var(--volt) !important; }
+.warn { color: var(--orange) !important; }
+
+/* ---- Workout player ---- */
+.progress-track { height: 8px; background: var(--card); border-radius: 10px; overflow: hidden; margin: 0 2px 18px; }
+.progress-fill { height: 100%; background: var(--volt); border-radius: 10px; transition: width .4s ease; width: 0%; }
+.workout-name { font-size: 26px; font-weight: 800; text-align: center; margin-bottom: 4px; }
+.workout-target { text-align: center; color: var(--muted); font-size: 14px; margin-bottom: 14px; }
+.big-timer { text-align: center; font-size: 64px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -2px; margin: 6px 0; }
+.big-timer.rest { color: var(--orange); }
+.timer-label { text-align: center; color: var(--muted); font-size: 13px; letter-spacing: 2px; font-weight: 700; margin-bottom: 16px; }
+.rep-counter { display: flex; align-items: center; justify-content: center; gap: 22px; margin: 10px 0 20px; }
+.rep-btn { width: 62px; height: 62px; border-radius: 50%; border: none; background: var(--card2); color: var(--text); font-size: 28px; cursor: pointer; }
+.rep-btn:active { transform: scale(.93); }
+.rep-num { font-size: 44px; font-weight: 800; min-width: 70px; text-align: center; }
+.workout-controls { display: flex; gap: 10px; }
+.workout-controls .btn-primary { flex: 1; }
+.set-dots { display: flex; justify-content: center; gap: 8px; margin: 16px 0 4px; }
+.set-dot { width: 12px; height: 12px; border-radius: 50%; background: #2A3642; }
+.set-dot.done { background: var(--volt); }
+.set-dot.current { background: var(--orange); }
+
+/* ---- Done screen ---- */
+.done-wrap { text-align: center; padding-top: 60px; }
+.done-badge { font-size: 64px; margin-bottom: 12px; }
+.done-wrap h1 { font-size: 28px; margin-bottom: 6px; }
+.done-sub { color: var(--muted); margin-bottom: 24px; }
+.done-stats { display: flex; gap: 12px; margin-bottom: 28px; }
+
+/* ---- Progress ---- */
+.history-list { display: flex; flex-direction: column; gap: 10px; }
+.history-item { background: var(--card); border-radius: 16px; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; }
+.history-item b { font-size: 15px; display: block; }
+.history-item span { color: var(--muted); font-size: 13px; }
+.history-item .kcal { color: var(--volt); font-weight: 800; font-size: 15px; }
+.empty-note { color: var(--muted); text-align: center; padding: 26px 10px; font-size: 14px; }
+
+/* ---- Bottom nav ---- */
+.bottom-nav {
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 100%; max-width: 480px; background: rgba(13, 18, 24, .96);
+  border-top: 1px solid #1E2833; display: flex; padding: 8px 6px calc(10px + env(safe-area-inset-bottom));
+  backdrop-filter: blur(8px); z-index: 50;
+}
+.nav-btn { flex: 1; background: none; border: none; color: var(--muted); font-size: 11px; font-weight: 700; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px 0; }
+.nav-btn .nav-ico { font-size: 21px; }
+.nav-btn.active { color: var(--volt); }
+
+/* ================= Animated exercise figures ================= */
+.fig { stroke: var(--volt); stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+.fig .head { fill: var(--volt); stroke: none; }
+.fig .body-fill { stroke: var(--volt); stroke-width: 9; }
+.floor { stroke: #33414F; stroke-width: 3; stroke-linecap: round; }
+
+/* Push-up: body pivots down/up around the feet */
+@keyframes pushup { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(7deg); } }
+.anim-pushup { transform-box: fill-box; transform-origin: 92% 50%; animation: pushup 1.6s ease-in-out infinite; }
+
+/* Squat: whole figure lowers, knees bend */
+@keyframes squatDown { 0%,100% { transform: translateY(0); } 50% { transform: translateY(12px); } }
+.anim-squat-body { animation: squatDown 1.8s ease-in-out infinite; }
+@keyframes squatThigh { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(58deg); } }
+.anim-squat-thigh { transform-box: fill-box; transform-origin: 50% 0%; animation: squatThigh 1.8s ease-in-out infinite; }
+@keyframes squatShin { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-62deg); } }
+.anim-squat-shin { transform-box: fill-box; transform-origin: 50% 0%; animation: squatShin 1.8s ease-in-out infinite; }
+@keyframes squatTorso { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(24deg); } }
+.anim-squat-torso { transform-box: fill-box; transform-origin: 50% 100%; animation: squatTorso 1.8s ease-in-out infinite; }
+
+/* Plank: gentle breathing */
+@keyframes breathe { 0%,100% { transform: scaleY(1); } 50% { transform: scaleY(1.045); } }
+.anim-plank { transform-box: fill-box; transform-origin: 50% 100%; animation: breathe 2.4s ease-in-out infinite; }
+
+/* Lunge: step forward + dip */
+@keyframes lungeDip { 0%,100% { transform: translateY(0); } 50% { transform: translateY(20px); } }
+.anim-lunge-body { animation: lungeDip 1.8s ease-in-out infinite; }
+@keyframes lungeFront { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(52deg); } }
+.anim-lunge-front { transform-box: fill-box; transform-origin: 50% 0%; animation: lungeFront 1.8s ease-in-out infinite; }
+@keyframes lungeBack { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-38deg); } }
+.anim-lunge-back { transform-box: fill-box; transform-origin: 50% 0%; animation: lungeBack 1.8s ease-in-out infinite; }
+@keyframes lungeFrontShin { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-50deg); } }
+.anim-lunge-front-shin { transform-box: fill-box; transform-origin: 50% 0%; animation: lungeFrontShin 1.8s ease-in-out infinite; }
+@keyframes lungeBackShin { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(55deg); } }
+.anim-lunge-back-shin { transform-box: fill-box; transform-origin: 50% 0%; animation: lungeBackShin 1.8s ease-in-out infinite; }
+
+/* Jumping jacks: arms up, legs out, little hop — all synced */
+@keyframes jackHop { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-14px); } }
+.anim-jack-body { animation: jackHop 1s ease-in-out infinite; }
+@keyframes jackArmL { 0%,100% { transform: rotate(-8deg); } 50% { transform: rotate(-168deg); } }
+@keyframes jackArmR { 0%,100% { transform: rotate(8deg); } 50% { transform: rotate(168deg); } }
+.anim-jack-arm-l { transform-box: fill-box; transform-origin: 50% 0%; animation: jackArmL 1s ease-in-out infinite; }
+.anim-jack-arm-r { transform-box: fill-box; transform-origin: 50% 0%; animation: jackArmR 1s ease-in-out infinite; }
+@keyframes jackLegL { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-24deg); } }
+@keyframes jackLegR { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(24deg); } }
+.anim-jack-leg-l { transform-box: fill-box; transform-origin: 50% 0%; animation: jackLegL 1s ease-in-out infinite; }
+.anim-jack-leg-r { transform-box: fill-box; transform-origin: 50% 0%; animation: jackLegR 1s ease-in-out infinite; }
+
+/* Crunches: torso lifts from the mat */
+@keyframes crunch { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-38deg); } }
+.anim-crunch { transform-box: fill-box; transform-origin: 100% 50%; animation: crunch 1.6s ease-in-out infinite; }
+
+/* ---- FitPro v2 additions: search, filters, real videos ---- */
+.search-input {
+  width: 100%; background: var(--card); color: var(--text);
+  border: 1px solid #26313D; border-radius: 14px;
+  padding: 13px 15px; font-size: 16px; margin-bottom: 16px; outline: none;
+}
+.search-input:focus { border-color: var(--volt); }
+.filter-label { font-size: 11px; color: var(--muted); font-weight: 700; letter-spacing: 1.5px; margin: 2px 2px 8px; }
+.result-count { color: var(--muted); font-size: 13px; margin: 0 2px 12px; }
+.cat-heading { font-size: 17px; font-weight: 800; margin: 20px 2px 10px; }
+.cat-heading:first-child { margin-top: 4px; }
+.cat-heading span { color: var(--muted); font-size: 13px; font-weight: 600; }
+.hero-lib { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+.hero-lib b { color: var(--volt); }
+
+/* Real video in the demo stage */
+.demo-stage { background: #000; }
+.demo-video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.demo-label { background: linear-gradient(0deg, rgba(0,0,0,.75), transparent); padding: 14px 8px 8px; }
+.stream-note { color: var(--muted); font-size: 13px; margin: 0 2px 14px; }
+
+/* List thumbnails: real poster or emoji tile */
+.ex-thumb { position: relative; }
+.ex-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ex-thumb.ex-emoji { display: flex; align-items: center; justify-content: center; font-size: 34px; }
+.thumb-play {
+  position: absolute; right: 5px; bottom: 5px;
+  background: rgba(0,0,0,.65); color: #fff; font-size: 10px;
+  width: 22px; height: 22px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+}
+.tag.stream { background: #3A2A10; color: #FFB020; }

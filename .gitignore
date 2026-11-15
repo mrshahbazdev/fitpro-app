@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Android build outputs
+android/app/build/
+android/.gradle/
+android/local.properties
+android/app/release/
+
+# Local toolchain downloads & caches (reinstalled per machine)
+*.tar.gz
+*.zip
+*.jar
+maven-cache/
+sdk-packages.log
+repo2.xml
+
+# Local build/test scripts and logs
+HttpClientTest.*
+ProxyTest.*
+RelayTest.*
+install-android-sdk.sh
+install-env-v3.sh
+install-v3.log
+install.log
+sdkmanager-proxy.sh
+maven-relay.log
+*.log
+hatch-ca.pem
+
+# Media backups (source clips live elsewhere; GIFs are Drive-hosted)
+/videos-mp4-backup/
+/videos/
+
+# Generated icon provenance (keep icon.png / splash.png)
+assets/media-generation-*
+
+# Editor / OS
+.idea/
+*.iml
+.DS_Store
